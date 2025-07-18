@@ -1,0 +1,20 @@
+<p-splitter [style]="{ height: '100%' }" layout="horizontal" class="mb-4">
+  <ng-template #panel>
+    <h2 class="titulo">Tareas por Estado</h2>
+    <div class="kanban-board">
+      <div class="kanban-column" *ngFor="let col of kanbanBoard">
+        <div class="column-header">{{ col.header }}</div>
+        <div
+          class="task-card"
+          *ngFor="let task of col.tasks"
+          [ngClass]="getTaskColor(task.color)"
+        >
+          <strong>#{{ task.id }} - {{ task.name }}</strong><br />
+          <span><strong>Creada:</strong> {{ task.create_at | date: 'yyyy-MM-dd HH:mm' }}</span><br />
+          <span><strong>Límite:</strong> {{ task.deadline | date: 'yyyy-MM-dd HH:mm' }}</span><br />
+          <span><strong>Descripción:</strong> {{ task.description }}</span>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+</p-splitter>

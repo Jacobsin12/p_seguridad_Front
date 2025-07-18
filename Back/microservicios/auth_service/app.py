@@ -1,24 +1,21 @@
 # auth_service.py
 from flask import Flask, request, jsonify
+import pyotp
+import qrcode
+import io
+import base64
 import sqlite3
 import os
 import jwt
 import datetime
-import requests
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# Configuración
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
-# Crear la aplicación Flask
 app = Flask(__name__)
-
-# Clave secreta para firmar los tokens JWT
 SECRET_KEY = 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw'
-
-# Nombre del archivo de base de datos SQLite
 DB_NAME = os.path.join(BASE_DIR, 'main_database.db')
 
-# Función para inicializar la base de datos y crear la tabla de usuarios si no existe
 def init_db():
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
@@ -28,69 +25,112 @@ def init_db():
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
                 email TEXT,
-                status TEXT DEFAULT 'active'
+                status TEXT DEFAULT 'active',
+                totp_secret TEXT
             )
         ''')
 
-# Ruta para registrar un nuevo usuario (método POST)
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()  # Obtener datos JSON enviados en la solicitud
-
-    # Validar que se reciban los campos requeridos
+    data = request.get_json()
     if not data or 'username' not in data or 'password' not in data or 'email' not in data:
-        return jsonify({'error': 'Faltan campos'}), 400  # Responder con error si falta algún campo
+        return jsonify({'error': 'Faltan campos'}), 400
 
-    # Hashear la contraseña para guardar de forma segura en la base de datos
     hashed_password = generate_password_hash(data['password'])
+    totp_secret = pyotp.random_base32()
 
     try:
         with sqlite3.connect(DB_NAME) as conn:
             cursor = conn.cursor()
-            # Insertar nuevo usuario en la tabla users
-            cursor.execute("INSERT INTO users (username, password, email) VALUES (?, ?, ?)",
-                           (data['username'], hashed_password, data['email']))
-            conn.commit()  # Guardar cambios en la base de datos
-            user_id = cursor.lastrowid  # Obtener ID del usuario recién creado
+            cursor.execute("INSERT INTO users (username, password, email, totp_secret) VALUES (?, ?, ?, ?)",
+                           (data['username'], hashed_password, data['email'], totp_secret))
+            conn.commit()
+            user_id = cursor.lastrowid
 
-        # Responder con mensaje de éxito y el ID del usuario creado
-        return jsonify({'message': 'Usuario registrado correctamente', 'user_id': user_id}), 201
+        otp_uri = pyotp.totp.TOTP(totp_secret).provisioning_uri(name=data['username'], issuer_name="SeguridadApp")
+        qr = qrcode.make(otp_uri)
+        buf = io.BytesIO()
+        qr.save(buf, format='PNG')
+        qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        qr_url = f"data:image/png;base64,{qr_b64}"
+
+        return jsonify({
+            'message': 'Usuario registrado correctamente',
+            'user_id': user_id,
+            'qrCodeUrl': qr_url
+        }), 201
+
     except sqlite3.IntegrityError:
-        # Si el nombre de usuario ya existe (restricción UNIQUE), devolver error 409 (conflicto)
         return jsonify({'error': 'Nombre de usuario ya existe'}), 409
 
-# Ruta para login de usuarios (método POST)
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()  # Obtener datos JSON de la solicitud
-
-    # Validar que estén los campos requeridos
+    data = request.get_json()
     if not data or 'username' not in data or 'password' not in data:
         return jsonify({'error': 'Faltan campos'}), 400
 
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
-        # Buscar usuario en la base de datos por username
         cursor.execute("SELECT * FROM users WHERE username = ?", (data['username'],))
         user = cursor.fetchone()
 
-    # user[2] es la contraseña hasheada almacenada
-    # Verificar que exista el usuario y que la contraseña ingresada coincida con el hash
     if user and check_password_hash(user[2], data['password']):
-        # Crear un token JWT que incluye id, username y expiración a 1 hora
-        token = jwt.encode({
+        temp_token = jwt.encode({
             'id': user[0],
             'username': user[1],
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            'mfa': True,
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=5)
         }, SECRET_KEY, algorithm='HS256')
 
-        # Devolver token JWT al cliente
-        return jsonify({'token': token})
+        return jsonify({'tempToken': temp_token}), 200
 
-    # Si usuario no existe o contraseña no coincide, devolver error 401
     return jsonify({'error': 'Credenciales incorrectas'}), 401
 
-# Ejecutar la aplicación Flask
+@app.route('/verify-otp', methods=['POST'])
+def verify_otp():
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return jsonify({'error': 'Falta token en header Authorization'}), 401
+    temp_token = auth_header.split(' ')[1]
+
+    data = request.get_json()
+    if not data or 'otp' not in data:
+        return jsonify({'error': 'Falta OTP en body'}), 400
+
+    try:
+        payload = jwt.decode(temp_token, SECRET_KEY, algorithms=['HS256'])
+
+        if not payload.get('mfa'):
+            return jsonify({'error': 'Token inválido para MFA'}), 401
+
+        user_id = payload['id']
+
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            user = cursor.fetchone()
+
+        if not user:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+
+        totp = pyotp.TOTP(user[5])
+        if totp.verify(data['otp']):
+            final_token = jwt.encode({
+                'id': user[0],
+                'username': user[1],
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+            }, SECRET_KEY, algorithm='HS256')
+
+            return jsonify({'token': final_token}), 200
+        else:
+            return jsonify({'error': 'OTP incorrecto'}), 401
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token expirado'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Token inválido'}), 401
+
+
 if __name__ == '__main__':
-    init_db()  # Crear la base de datos y tabla si no existen
-    app.run(port=5001, debug=True)  # Ejecutar en puerto 5001 con debug activado (modo desarrollo)
+    init_db()
+    app.run(port=5001, debug=True)

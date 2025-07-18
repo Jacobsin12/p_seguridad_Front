@@ -1,9 +1,11 @@
 import requests
 from flask import Flask, jsonify, request
+from flask_cors import CORS # Necesario para poder interacturar con el front
 
 # Crear una instancia de la aplicación Flask
 app = Flask(__name__)
 
+CORS(app, origins=["http://localhost:4200"]) # Permite las peticiones desde otro puerto 
 # URLs base de los microservicios que se van a consumir
 AUTH_SERVICE_URL = 'http://localhost:5001'   # Servicio de autenticación
 USER_SERVICE_URL = 'http://localhost:5002'   # Servicio de usuario

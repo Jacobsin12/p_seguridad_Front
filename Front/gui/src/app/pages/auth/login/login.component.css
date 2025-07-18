@@ -1,0 +1,129 @@
+/* Contenedor centrado con fondo suave */
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1rem;
+  background: linear-gradient(135deg, #e3f2fd, #fce4ec);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Modo oscuro */
+.login-container.dark-mode {
+  background: #121212;
+  color: #eee;
+}
+
+/* Estilo del card */
+.login-card {
+  width: 28rem;
+  padding: 2rem;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+  background-color: white;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.login-container.dark-mode .login-card {
+  background-color: #1e1e1e !important;
+  color: #eee !important;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+}
+
+/* Título del login */
+.login-title {
+  text-align: center;
+  color: #1e88e5;
+  margin: 0 0 0.5rem 0;
+}
+
+.login-container.dark-mode .login-title {
+  color: #90caf9;
+}
+
+/* Subtítulo */
+.login-subtitle {
+  text-align: center;
+  color: #616161;
+  font-size: 0.95rem;
+  margin-top: 0;
+  margin-bottom: 2rem;
+}
+
+.login-container.dark-mode .login-subtitle {
+  color: #bbb;
+}
+
+/* Grupo de inputs */
+.login-input-group {
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.login-container.dark-mode .login-input-group {
+  border-bottom-color: #555;
+}
+
+/* Icono en input */
+.login-icon {
+  color: #1e88e5;
+  margin-right: 0.5rem;
+  font-size: 1.2rem;
+}
+
+.login-container.dark-mode .login-icon {
+  color: #90caf9;
+}
+
+/* Input */
+.login-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 1rem;
+  padding: 0.25rem 0;
+  background-color: transparent;
+  color: #222;
+  transition: color 0.3s ease;
+}
+
+.login-container.dark-mode .login-input {
+  color: #eee;
+}
+
+/* Footer con botones */
+.login-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2rem;
+  gap: 1rem;
+}
+
+/* Botones */
+.login-button {
+  flex: 1;
+  font-weight: bold;
+}
+
+/* Botón toggle modo oscuro */
+.btn-toggle-dark {
+  width: auto;
+  font-weight: normal;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .login-card {
+    width: 100%;
+    padding: 1.5rem;
+  }
+
+  .login-footer {
+    flex-direction: column;
+  }
+}
