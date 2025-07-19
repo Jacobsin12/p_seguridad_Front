@@ -5,14 +5,14 @@
   align-items: center;
   min-height: 100vh;
   padding: 1rem;
-  background: linear-gradient(135deg, #e3f2fd, #fce4ec);
+  background: linear-gradient(135deg, #bfd9ce, #447661);
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Modo oscuro */
 .login-container.dark-mode {
   background: #121212;
-  color: #eee;
+  color: #eeeeee;
 }
 
 /* Estilo del card */
@@ -127,3 +127,12 @@
     flex-direction: column;
   }
 }
+
+.login-register-text {
+  color: #000; /* Color negro por defecto para modo claro */
+}
+
+.dark-mode .login-register-text {
+  color: #fff; /* Blanco o gris claro para modo oscuro */
+}
+

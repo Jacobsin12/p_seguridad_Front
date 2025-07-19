@@ -2,12 +2,15 @@
   <ng-template #panel>
     <h2 class="titulo">Tareas por Estado</h2>
     <div class="kanban-board">
-      <div class="kanban-column" *ngFor="let col of kanbanBoard">
+      <div class="kanban-column" *ngFor="let col of kanbanBoard" pDroppable="tasks" (onDrop)="drop(col)">
         <div class="column-header">{{ col.header }}</div>
         <div
           class="task-card"
           *ngFor="let task of col.tasks"
           [ngClass]="getTaskColor(task.color)"
+          pDraggable="tasks"
+          (onDragStart)="dragStart(task, col)"
+          (onDragEnd)="dragEnd()"
         >
           <strong>#{{ task.id }} - {{ task.name }}</strong><br />
           <span><strong>Creada:</strong> {{ task.create_at | date: 'yyyy-MM-dd HH:mm' }}</span><br />

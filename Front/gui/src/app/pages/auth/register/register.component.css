@@ -3,11 +3,14 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 100vh;
+  min-height: 100vh; /* ya está correcto */
+  width: 100%;
   padding: 1rem;
-  background: linear-gradient(135deg, #e3f2fd, #fce4ec);
+  background: linear-gradient(135deg, #bfd9ce, #447661);
   transition: background-color 0.3s ease;
 }
+
+
 
 /* Modo oscuro */
 .register-container.dark-mode {
@@ -87,7 +90,7 @@
   font-size: 1rem;
   padding: 0.25rem 0;
   background-color: transparent;
-  color: #222;
+  color: #9f9f9f;
   transition: color 0.3s ease;
 }
 
@@ -116,4 +119,12 @@
     max-width: 100%;
     padding: 1rem;
   }
+}
+
+.register-login-text {
+  color: #000; /* Negro para modo claro */
+}
+
+.dark-mode .register-login-text {
+  color: #fff; /* Blanco para modo oscuro */
 }
