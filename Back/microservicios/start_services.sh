@@ -4,7 +4,7 @@
 
 # Definimos el directorio base del proyecto
 PROJECT_DIR="$(pwd)"
-VENV_DIR="$PROJECT_DIR/venv2"
+VENV_DIR="$PROJECT_DIR/venv"
 LOG_DIR="$PROJECT_DIR/logs"
 
 # Creamos un directorio para los logs si no existe
