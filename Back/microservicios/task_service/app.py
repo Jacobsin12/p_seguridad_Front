@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 import psycopg2
-import psycopg2.extras
+from psycopg2.extras import RealDictCursor
 import jwt
 import os
 import datetime
@@ -10,13 +10,13 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
 
-SECRET_KEY = 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw'
-
-# Obtener la URL de la base de datos PostgreSQL desde la variable de entorno de Render
+# Obtener variables de entorno
 DATABASE_URL = os.environ.get('DATABASE_URL')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw')
 
+# Función para conectarse a PostgreSQL
 def get_db_connection():
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
     return conn
 
 def token_required(f):
@@ -38,7 +38,6 @@ def token_required(f):
         return f(*args, **kwargs)
     return decorated
 
-# Crear tabla tasks si no existe
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -47,12 +46,13 @@ def init_db():
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             description TEXT,
-            create_at TIMESTAMP NOT NULL,
-            deadline TIMESTAMP,
-            status VARCHAR(20) CHECK(status IN ('InProgress', 'Revision', 'Completed', 'Paused')) NOT NULL DEFAULT 'InProgress',
+            create_at TIMESTAMPTZ NOT NULL,
+            deadline TIMESTAMPTZ,
+            status TEXT CHECK (status IN ('InProgress', 'Revision', 'Completed', 'Paused')) NOT NULL DEFAULT 'InProgress',
             isAlive BOOLEAN NOT NULL DEFAULT TRUE,
-            created_by INTEGER NOT NULL -- Asume que usuarios están en otra tabla
-        )
+            created_by INTEGER NOT NULL
+            -- Aquí debes tener la tabla users y su relación creada previamente
+        );
     ''')
     conn.commit()
     cursor.close()
@@ -69,7 +69,7 @@ def create_task():
 
     created_by = request.user['id']
     create_at = datetime.datetime.utcnow()
-    deadline = datetime.datetime.fromisoformat(data['deadline'])
+    deadline = data['deadline']
     status = 'InProgress'
     isAlive = True
 
@@ -77,7 +77,7 @@ def create_task():
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO tasks (name, description, create_at, deadline, status, isAlive, created_by)
-        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id;
     ''', (data['name'], data['description'], create_at, deadline, status, isAlive, created_by))
     task_id = cursor.fetchone()[0]
     conn.commit()
@@ -91,48 +91,49 @@ def create_task():
 def get_tasks():
     created_by = request.user['id']
     conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cursor.execute('SELECT id, name, description, create_at, deadline, status, isAlive FROM tasks WHERE created_by = %s AND isAlive = TRUE', (created_by,))
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('''
+        SELECT id, name, description, create_at, deadline, status, isAlive 
+        FROM tasks 
+        WHERE created_by = %s AND isAlive = TRUE
+    ''', (created_by,))
     tasks = cursor.fetchall()
     cursor.close()
     conn.close()
 
-    tasks_list = []
-    for t in tasks:
-        tasks_list.append({
-            'id': t['id'],
-            'name': t['name'],
-            'description': t['description'],
-            'create_at': t['create_at'].isoformat(),
-            'deadline': t['deadline'].isoformat() if t['deadline'] else None,
-            'status': t['status'],
-            'isAlive': t['isalive']
-        })
-    return jsonify({'tasks': tasks_list})
+    # Convierte isAlive a bool si no está ya
+    for task in tasks:
+        task['isAlive'] = bool(task['isAlive'])
+        # formatea fechas si quieres, por ejemplo:
+        task['create_at'] = task['create_at'].isoformat()
+        if task['deadline']:
+            task['deadline'] = task['deadline'].isoformat()
+
+    return jsonify({'tasks': tasks})
 
 @app.route('/tasks/<int:task_id>', methods=['GET'])
 @token_required
 def get_task(task_id):
     created_by = request.user['id']
     conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cursor.execute('SELECT id, name, description, create_at, deadline, status, isAlive FROM tasks WHERE id = %s AND created_by = %s AND isAlive = TRUE', (task_id, created_by))
-    t = cursor.fetchone()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute('''
+        SELECT id, name, description, create_at, deadline, status, isAlive 
+        FROM tasks 
+        WHERE id = %s AND created_by = %s AND isAlive = TRUE
+    ''', (task_id, created_by))
+    task = cursor.fetchone()
     cursor.close()
     conn.close()
 
-    if not t:
+    if not task:
         return jsonify({'error': 'Tarea no encontrada'}), 404
 
-    task = {
-        'id': t['id'],
-        'name': t['name'],
-        'description': t['description'],
-        'create_at': t['create_at'].isoformat(),
-        'deadline': t['deadline'].isoformat() if t['deadline'] else None,
-        'status': t['status'],
-        'isAlive': t['isalive']
-    }
+    task['isAlive'] = bool(task['isAlive'])
+    task['create_at'] = task['create_at'].isoformat()
+    if task['deadline']:
+        task['deadline'] = task['deadline'].isoformat()
+
     return jsonify({'task': task})
 
 @app.route('/tasks/<int:task_id>', methods=['PUT'])
@@ -147,40 +148,31 @@ def update_task(task_id):
     if 'status' in update_fields and update_fields['status'] not in ['InProgress', 'Revision', 'Completed', 'Paused']:
         return jsonify({'error': 'Estado inválido'}), 400
 
-    set_clauses = []
-    values = []
-    for key, val in update_fields.items():
-        set_clauses.append(f"{key} = %s")
-        if key == 'deadline' and val is not None:
-            values.append(datetime.datetime.fromisoformat(val))
-        else:
-            values.append(val)
-    set_clause = ', '.join(set_clauses)
-
-    values.append(task_id)
-    values.append(created_by)
+    set_clause = ', '.join(f"{field} = %s" for field in update_fields.keys())
+    values = list(update_fields.values())
+    values.extend([task_id, created_by])
 
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(f'''
         UPDATE tasks SET {set_clause}
         WHERE id = %s AND created_by = %s
-    ''', tuple(values))
+    ''', values)
     conn.commit()
-    affected = cursor.rowcount
-    cursor.close()
-    conn.close()
 
-    if affected == 0:
+    if cursor.rowcount == 0:
+        cursor.close()
+        conn.close()
         return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
 
+    cursor.close()
+    conn.close()
     return jsonify({'message': 'Tarea actualizada'})
 
 @app.route('/tasks/<int:task_id>', methods=['DELETE'])
 @token_required
 def delete_task(task_id):
     created_by = request.user['id']
-
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -188,16 +180,17 @@ def delete_task(task_id):
         WHERE id = %s AND created_by = %s
     ''', (task_id, created_by))
     conn.commit()
-    affected = cursor.rowcount
-    cursor.close()
-    conn.close()
 
-    if affected == 0:
+    if cursor.rowcount == 0:
+        cursor.close()
+        conn.close()
         return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
 
+    cursor.close()
+    conn.close()
     return jsonify({'message': 'Tarea eliminada (borrado lógico)'})
 
 if __name__ == '__main__':
     init_db()
     port = int(os.environ.get('PORT', 5003))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=True)
