@@ -10,11 +10,12 @@ export const routes: Routes = [
       import('./pages/auth/auth.routes').then((m) => m.AUTH_ROUTES),
   },
 
-  {
-    path: 'task',
-    loadChildren: () =>
-      import('./pages/tasks/task.routes').then((m) => m.TASK_ROUTES),
-  },
+{
+  path: 'tasks',
+  loadChildren: () =>
+    import('./pages/tasks/task.routes').then((m) => m.TASK_ROUTES),
+},
+
 
   // 🔴 Esta debe ir al final
   {

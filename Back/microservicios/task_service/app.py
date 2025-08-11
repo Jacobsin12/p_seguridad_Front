@@ -4,9 +4,13 @@ import jwt
 import os
 import datetime
 from functools import wraps
+from flask_cors import CORS  # Importar flask_cors
 
 # Crear la aplicación Flask
 app = Flask(__name__)
+
+# Configurar CORS para aceptar peticiones desde Angular (localhost:4200)
+CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -20,26 +24,19 @@ SECRET_KEY = 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw'
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        # Obtener el token del header 'Authorization'
         token = request.headers.get('Authorization')
         if not token:
             return jsonify({'error': 'Token requerido'}), 401
         
         try:
-            # Quitar el prefijo 'Bearer ' si existe
             token = token.replace('Bearer ', '')
-            # Decodificar el token usando la clave secreta y HS256
             data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-            # Guardar la info del usuario en el objeto request para usarla en la ruta
             request.user = data
         except jwt.ExpiredSignatureError:
-            # El token ha expirado
             return jsonify({'error': 'Token expirado'}), 401
         except jwt.InvalidTokenError:
-            # El token es inválido o no válido
             return jsonify({'error': 'Token inválido'}), 401
         
-        # Ejecutar la función protegida si el token es válido
         return f(*args, **kwargs)
     return decorated
 
@@ -69,17 +66,15 @@ def create_task():
     data = request.get_json()
     required_fields = ['name', 'description', 'deadline']
 
-    # Verificar que todos los campos obligatorios estén presentes
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Faltan campos obligatorios'}), 400
 
-    created_by = request.user['id']  # Obtener id del usuario del token
-    create_at = datetime.datetime.utcnow().isoformat()  # Fecha actual en formato ISO
+    created_by = request.user['id']
+    create_at = datetime.datetime.utcnow().isoformat()
     deadline = data['deadline']
-    status = 'InProgress'  # Estado inicial
-    isAlive = 1  # Estado activo (para borrado lógico)
+    status = 'InProgress'
+    isAlive = 1
 
-    # Insertar la nueva tarea en la base de datos
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -87,7 +82,7 @@ def create_task():
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (data['name'], data['description'], create_at, deadline, status, isAlive, created_by))
         conn.commit()
-        task_id = cursor.lastrowid  # ID de la tarea creada
+        task_id = cursor.lastrowid
 
     return jsonify({'message': 'Tarea creada', 'task_id': task_id}), 201
 
@@ -95,13 +90,12 @@ def create_task():
 @app.route('/tasks', methods=['GET'])
 @token_required
 def get_tasks():
-    created_by = request.user['id']  # Id usuario del token
+    created_by = request.user['id']
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
-        # Seleccionar tareas activas del usuario
         cursor.execute('SELECT id, name, description, create_at, deadline, status, isAlive FROM tasks WHERE created_by = ? AND isAlive = 1', (created_by,))
         tasks = cursor.fetchall()
-    # Construir la lista de tareas en formato JSON
+
     tasks_list = []
     for t in tasks:
         tasks_list.append({
@@ -122,11 +116,12 @@ def get_task(task_id):
     created_by = request.user['id']
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
-        # Buscar tarea por id, usuario y que esté activa
         cursor.execute('SELECT id, name, description, create_at, deadline, status, isAlive FROM tasks WHERE id = ? AND created_by = ? AND isAlive = 1', (task_id, created_by))
         t = cursor.fetchone()
+
     if not t:
         return jsonify({'error': 'Tarea no encontrada'}), 404
+
     task = {
         'id': t[0],
         'name': t[1],
@@ -145,16 +140,12 @@ def update_task(task_id):
     data = request.get_json()
     created_by = request.user['id']
 
-    # Campos que se permiten actualizar
     fields = ['name', 'description', 'deadline', 'status', 'isAlive']
-    # Filtrar solo los campos presentes en la petición
     update_fields = {field: data[field] for field in fields if field in data}
 
-    # Validar que el estado sea válido si se está actualizando
     if 'status' in update_fields and update_fields['status'] not in ['InProgress', 'Revision', 'Completed', 'Paused']:
         return jsonify({'error': 'Estado inválido'}), 400
 
-    # Crear el fragmento dinámico para la consulta UPDATE
     set_clause = ', '.join(f"{field} = ?" for field in update_fields.keys())
     values = list(update_fields.values())
     values.append(task_id)
@@ -168,7 +159,6 @@ def update_task(task_id):
         ''', values)
         conn.commit()
 
-        # Verificar si se actualizó alguna fila
         if cursor.rowcount == 0:
             return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
 
@@ -181,18 +171,16 @@ def delete_task(task_id):
     created_by = request.user['id']
     with sqlite3.connect(DB_NAME) as conn:
         cursor = conn.cursor()
-        # Actualizar el campo isAlive a 0 para marcar la tarea como eliminada
         cursor.execute('''
             UPDATE tasks SET isAlive = 0
             WHERE id = ? AND created_by = ?
         ''', (task_id, created_by))
         conn.commit()
-        # Verificar que la tarea haya existido y sido actualizada
         if cursor.rowcount == 0:
             return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
     return jsonify({'message': 'Tarea eliminada (borrado lógico)'})
 
 # Inicializar la base de datos y ejecutar la aplicación
 if __name__ == '__main__':
-    init_db()  # Crear tabla tasks si no existe
-    app.run(port=5003, debug=True)  # Ejecutar en puerto 5003 con debug activado
+    init_db()
+    app.run(port=5003, debug=True)

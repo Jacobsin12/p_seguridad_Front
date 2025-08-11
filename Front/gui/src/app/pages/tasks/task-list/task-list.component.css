@@ -109,3 +109,33 @@ body.dark-mode .task-card {
 body.dark-mode .kanban-column.p-droppable-hover {
   background-color: #2a2a2a;
 }
+
+.p-dialog .p-field label {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.p-dialog .p-field input,
+.p-dialog .p-field textarea,
+.p-dialog .p-field .p-inputtext,
+.p-dialog .p-field .p-calendar {
+  width: 100%;
+}
+
+.p-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+/* Asegurar que el popup del calendario quede sobre el modal */
+.ui-datepicker {
+  z-index: 2000 !important;
+}
+
+/* Para PrimeNG Calendar popup */
+.ui-calendar {
+  z-index: 2100 !important;
+}
+
+

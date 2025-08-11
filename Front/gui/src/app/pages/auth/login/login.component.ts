@@ -92,7 +92,7 @@ export class LoginComponent {
         } else if (res.token) {
           console.log('🔓 Login exitoso con token completo');
           localStorage.setItem('token', res.token);
-          this.router.navigate(['/task']);
+          this.router.navigate(['/tasks']);
         } else {
           console.error('❌ Respuesta inesperada del servidor');
           this.errorMessage = 'Respuesta inesperada del servidor';
@@ -140,7 +140,7 @@ export class LoginComponent {
         
         if (res.token) {
           localStorage.setItem('token', res.token);
-          this.router.navigate(['/task']);
+          this.router.navigate(['/tasks']);
         } else {
           this.errorMessage = 'No se recibió token de autenticación';
         }

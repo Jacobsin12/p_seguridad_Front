@@ -2,10 +2,8 @@ import { Component } from '@angular/core';
 
 @Component({
   selector: 'app-task-create',
-  imports: [],
-  templateUrl: './task-create.component.html',
-  styleUrl: './task-create.component.css'
+  standalone: true,
+  template: `<div></div>`,
+  styles: [``]
 })
-export class TaskCreateComponent {
-
-}
+export class TaskCreateComponent {}

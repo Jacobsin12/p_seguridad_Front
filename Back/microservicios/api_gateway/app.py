@@ -1,105 +1,210 @@
-import requests
-import logging
 import time
-import json
-import jwt
+import logging
 from datetime import datetime
-from flask import Flask, jsonify, request
+import requests
+import jwt
+from flask import Flask, jsonify, request, g, Response
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
-# Configuración inicial
+# Firebase Admin SDK
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# Inicializa Firebase Admin (ajusta la ruta a tu archivo JSON)
+cred = credentials.Certificate('firebase_key.json')
+firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+# Clave secreta para decodificar JWT (debe coincidir con el backend auth)
+SECRET_KEY = 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw'
+
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:4200"])
 
-# Clave secreta igual a la del microservicio de autenticación
-SECRET_KEY = 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw'
+logging.basicConfig(
+    filename='apigateway.log',
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
-# Configuración del logger en modo JSON
-logger = logging.getLogger('gateway_logger')
-logger.setLevel(logging.INFO)
-file_handler = logging.FileHandler('gateway_logs.log')
-file_handler.setFormatter(logging.Formatter('%(message)s'))
-logger.addHandler(file_handler)
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["5 per minute"]
+)
 
-# Diccionario de servicios
-SERVICES = {
-    'auth': 'http://localhost:5001',
-    'user': 'http://localhost:5002',
-    'tasks': 'http://localhost:5003',
-}
+AUTH_SERVICE_URL = 'http://localhost:5001'
+USER_SERVICE_URL = 'http://localhost:5002'
+TASK_SERVICE_URL = 'http://localhost:5003'
 
-# Función para extraer el usuario desde el JWT del header Authorization
-def extraer_usuario_desde_token():
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-            return payload.get("username", "anonimo")
-        except jwt.ExpiredSignatureError:
-            return "token expirado"
-        except jwt.InvalidTokenError:
-            return "token inválido"
-    return "anonimo"
+def get_user_from_token(token):
+    try:
+        token = token.replace("Bearer ", "")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return payload.get("username") or payload.get("user_id") or "unknown"
+    except Exception:
+        return "invalid_token"
 
-# Función para registrar en el archivo de logs
-def log_request(servicio, method, path, usuario, ip, status_code, response_time):
-    log_data = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "method": method,
-        "path": path,
-        "servicio": servicio,
-        "usuario": usuario,
-        "ip": ip,
-        "status_code": status_code,
-        "response_time_seconds": round(response_time, 3)
-    }
-    logger.info(json.dumps(log_data))
+@app.before_request
+def start_timer():
+    g.start_time = time.time()
 
-# Función principal de proxy
-def proxy_request(servicio, service_url, path):
+@app.after_request
+def log_request(response):
+    if not hasattr(g, 'start_time'):
+        g.start_time = time.time()
+
+    duration = round(time.time() - g.start_time, 4)
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    status = response.status_code
+    method = request.method
+    full_path = request.full_path
+
+    raw_token = request.headers.get('Authorization')
+    user = get_user_from_token(raw_token) if raw_token else 'anonymous'
+
+    log_message = (
+        f"{timestamp} | {method} {full_path} | Status: {status} | Time: {duration}s | User: {user}"
+    )
+    logging.info(log_message)
+
+    try:
+        db.collection('apigateway_logs').add({
+            'timestamp': timestamp,
+            'method': method,
+            'path': full_path,
+            'status': status,
+            'duration': duration,
+            'user': user
+        })
+    except Exception as e:
+        print(f"Error guardando log en Firestore: {e}")
+
+    return response
+
+def proxy_request(service_url, path):
     method = request.method
     url = f'{service_url}/{path}'
-    usuario = extraer_usuario_desde_token()
-    ip = request.remote_addr
 
-    start_time = time.time()
+    headers = {key: value for key, value in request.headers if key.lower() != 'host'}
+
+    data = None
+    json_data = None
+    if method in ['POST', 'PUT', 'PATCH']:
+        if request.is_json:
+            json_data = request.get_json()
+        else:
+            data = request.form.to_dict()
+
     try:
         resp = requests.request(
             method=method,
             url=url,
-            json=request.get_json(silent=True),
-            headers={key: value for key, value in request.headers if key.lower() != 'host'}
+            headers=headers,
+            params=request.args,
+            data=data,
+            json=json_data,
+            timeout=10
         )
-        duration = time.time() - start_time
+    except requests.exceptions.RequestException as e:
+        # En caso de error comunicando con microservicio, devolver error controlado
+        return jsonify({"error": "Error comunicando con el microservicio", "details": str(e)}), 502
 
-        log_request(servicio, method, f'/{path}', usuario, ip, resp.status_code, duration)
+    excluded_headers = [
+        'content-encoding', 'content-length', 'transfer-encoding', 'connection',
+        'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te',
+        'trailers', 'upgrade'
+    ]
+    response_headers = [(name, value) for (name, value) in resp.headers.items()
+                        if name.lower() not in excluded_headers]
 
-        try:
-            return jsonify(resp.json()), resp.status_code
-        except ValueError:
-            return resp.text, resp.status_code
+    response = Response(resp.content, resp.status_code, response_headers)
+    return response
 
-    except Exception as e:
-        duration = time.time() - start_time
-        log_request(servicio, method, f'/{path}', usuario, ip, 500, duration)
-        return jsonify({'error': 'Gateway error'}), 500
-
-# Rutas para redirigir a los microservicios
 @app.route('/auth/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+@limiter.limit("10/minute")
 def proxy_auth(path):
-    return proxy_request('auth', SERVICES['auth'], path)
+    return proxy_request(AUTH_SERVICE_URL, path)
 
 @app.route('/user/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def proxy_user(path):
-    return proxy_request('user', SERVICES['user'], path)
+    return proxy_request(USER_SERVICE_URL, path)
 
+# Corrección importante aquí para /tasks:
 @app.route('/tasks', methods=['GET', 'POST'])
-@app.route('/tasks/<path:path>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/tasks/', methods=['GET', 'POST'])
+@app.route('/tasks/<path:path>', methods=['GET', 'PUT', 'DELETE', 'PATCH'])
 def proxy_tasks(path=''):
     fixed_path = 'tasks' if path == '' else f'tasks/{path}'
-    return proxy_request('tasks', SERVICES['tasks'], fixed_path)
+    return proxy_request(TASK_SERVICE_URL, fixed_path)
 
-# Iniciar aplicación
+@app.route('/api/logs/stats', methods=['GET'])
+def logs_stats():
+    try:
+        status_counts = {}
+        total_time = 0
+        count = 0
+        api_counts = {}
+
+        with open('apigateway.log', 'r') as f:
+            for line in f:
+                parts = line.strip().split('|')
+                if len(parts) < 5:
+                    continue
+
+                status_code = None
+                time_sec = None
+                path = None
+
+                for part in parts:
+                    part = part.strip()
+                    if part.startswith('Status:'):
+                        status_code = part.split(' ')[1]
+                    elif part.startswith('Time:'):
+                        try:
+                            time_sec = float(part.split(' ')[1].replace('s', ''))
+                        except Exception:
+                            time_sec = 0
+                    elif any(part.startswith(m) for m in ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']):
+                        path = part.split(' ')[1]
+
+                if status_code is None or time_sec is None or path is None:
+                    continue
+
+                status_counts[status_code] = status_counts.get(status_code, 0) + 1
+                total_time += time_sec
+                count += 1
+
+                if path not in api_counts:
+                    api_counts[path] = {'hits': 0, 'total_time': 0}
+                api_counts[path]['hits'] += 1
+                api_counts[path]['total_time'] += time_sec
+
+        average_response_time = total_time / count if count > 0 else 0
+
+        endpoints = {}
+        for path, data in api_counts.items():
+            avg_time = data['total_time'] / data['hits']
+            endpoints[path] = {
+                'hits': data['hits'],
+                'avg_time': round(avg_time, 3)
+            }
+
+        return jsonify({
+            "total_requests": count,
+            "status_counts": status_counts,
+            "avg_response_time": round(average_response_time, 3),
+            "endpoints": endpoints
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
