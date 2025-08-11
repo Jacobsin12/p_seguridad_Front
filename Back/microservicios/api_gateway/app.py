@@ -1,5 +1,3 @@
-
-
 import os
 import time
 import logging
@@ -124,11 +122,16 @@ def proxy_request(service_url, path):
     data = None
     json_data = None
     if method in ['POST', 'PUT', 'PATCH']:
-        content_type = request.headers.get('Content-Type', '')
+        content_type = request.headers.get('Content-Type', '').lower()
         logging.debug(f"Content-Type recibido: {content_type}")
-        if 'application/json' in content_type:
+        if 'application/json' in content_type or content_type == '':
             try:
-                json_data = request.get_json()
+                # Si Content-Type está vacío, intentamos parsear como JSON si hay body
+                if content_type == '' and request.data:
+                    logging.warning("Content-Type vacío; asumiendo application/json para body presente.")
+                    json_data = json.loads(request.data)
+                else:
+                    json_data = request.get_json()
                 logging.debug(f"Datos JSON enviados: {json_data}")
             except Exception as e:
                 logging.error(f"Error parseando JSON: {str(e)} - Traza: {traceback.format_exc()}")
@@ -168,7 +171,7 @@ def proxy_request(service_url, path):
     return Response(resp.content, resp.status_code, response_headers)
 
 @app.route('/auth/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 def proxy_auth(path):
     logging.debug(f"Proxy a auth: {path}")
     return proxy_request(AUTH_SERVICE_URL, path)
