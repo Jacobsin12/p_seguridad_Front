@@ -124,12 +124,21 @@ def proxy_request(service_url, path):
     data = None
     json_data = None
     if method in ['POST', 'PUT', 'PATCH']:
-        if request.is_json:
-            json_data = request.get_json()
-            logging.debug(f"Datos JSON enviados: {json_data}")
-        else:
+        content_type = request.headers.get('Content-Type', '')
+        logging.debug(f"Content-Type recibido: {content_type}")
+        if 'application/json' in content_type:
+            try:
+                json_data = request.get_json()
+                logging.debug(f"Datos JSON enviados: {json_data}")
+            except Exception as e:
+                logging.error(f"Error parseando JSON: {str(e)} - Traza: {traceback.format_exc()}")
+                return jsonify({"error": "Datos JSON inválidos", "details": str(e)}), 400
+        elif 'multipart/form-data' in content_type or 'application/x-www-form-urlencoded' in content_type:
             data = request.form.to_dict()
             logging.debug(f"Datos form enviados: {data}")
+        else:
+            logging.error(f"Content-Type no soportado: {content_type}")
+            return jsonify({"error": "Content-Type no soportado", "details": f"Se esperaba 'application/json', recibido '{content_type}'"}), 415
 
     try:
         logging.debug(f"Enviando solicitud a {url} con método {method}")
@@ -151,13 +160,12 @@ def proxy_request(service_url, path):
         'content-length', 'transfer-encoding', 'connection',
         'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te',
         'trailers', 'upgrade'
-    ]  # Corregido: Quitado el '+' innecesario que causaba error de sintaxis
+    ]
 
     response_headers = [(name, value) for (name, value) in resp.headers.items()
                         if name.lower() not in excluded_headers]
 
-    response = Response(resp.content, resp.status_code, response_headers)
-    return response
+    return Response(resp.content, resp.status_code, response_headers)
 
 @app.route('/auth/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 @limiter.limit("10/minute")
