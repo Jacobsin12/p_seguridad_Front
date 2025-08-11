@@ -47,7 +47,13 @@ db = firestore.client()
 app = Flask(__name__)
 
 # Ajusta la URL del frontend que usarás en producción
-CORS(app, origins=["http://localhost:4200", "https://appseg.vercel.app"])
+CORS(
+    app,
+    origins=["http://localhost:4200", "https://appseg.vercel.app"],
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+)
 
 logging.basicConfig(
     filename='apigateway.log',
