@@ -191,61 +191,41 @@ def proxy_tasks(path=''):
 
 @app.route('/api/logs/stats', methods=['GET'])
 def logs_stats():
-    logging.debug("Accediendo a /api/logs/stats")
+    logging.debug("Accediendo a /api/logs/stats desde Firestore")
     try:
         status_counts = {}
         total_time = 0
         count = 0
         api_counts = {}
 
-        try:
-            with open('apigateway.log', 'r') as f:
-                logging.debug("Archivo de log abierto correctamente.")
-                for line in f:
-                    parts = line.strip().split('|')
-                    if len(parts) < 5:
-                        logging.warning(f"Línea de log inválida: {line}")
-                        continue
+        # Consulta los logs más recientes (puedes agregar filtros o paginación si quieres)
+        logs_ref = db.collection('apigateway_logs').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1000)
+        logs = logs_ref.stream()
 
-                    status_code = None
-                    time_sec = None
-                    path = None
+        for log in logs:
+            data = log.to_dict()
+            status_code = str(data.get('status', 'unknown'))
+            duration = float(data.get('duration', 0))
+            path = data.get('path', 'unknown')
 
-                    for part in parts:
-                        part = part.strip()
-                        if part.startswith('Status:'):
-                            status_code = part.split(' ')[1]
-                        elif part.startswith('Time:'):
-                            try:
-                                time_sec = float(part.split(' ')[1].replace('s', ''))
-                            except Exception:
-                                logging.warning(f"Error parseando tiempo en línea: {line}")
-                                time_sec = 0
-                        elif any(part.startswith(m) for m in ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']):
-                            path = part.split(' ')[1]
+            # Normaliza path para agrupar endpoints (ejemplo: '/tasks/123' a '/tasks')
+            if path.startswith('/tasks'):
+                path = '/tasks'
+            elif path.startswith('/auth'):
+                path = '/auth'
+            elif path.startswith('/user'):
+                path = '/user'
 
-                    if status_code is None or time_sec is None or path is None:
-                        logging.warning(f"Línea incompleta: {line}")
-                        continue
+            # Cuenta por status
+            status_counts[status_code] = status_counts.get(status_code, 0) + 1
 
-                    if path.startswith('/tasks'):
-                        path = '/tasks'
+            total_time += duration
+            count += 1
 
-                    status_counts[status_code] = status_counts.get(status_code, 0) + 1
-                    total_time += time_sec
-                    count += 1
-
-                    if path not in api_counts:
-                        api_counts[path] = {'hits': 0, 'total_time': 0}
-                    api_counts[path]['hits'] += 1
-                    api_counts[path]['total_time'] += time_sec
-
-        except FileNotFoundError:
-            logging.error("Archivo apigateway.log no encontrado.")
-            return jsonify({"error": "Archivo de log no encontrado"}), 500
-        except Exception as e:
-            logging.error(f"Error leyendo log: {str(e)} - Traza: {traceback.format_exc()}")
-            return jsonify({"error": f"Error procesando log: {str(e)}"}), 500
+            if path not in api_counts:
+                api_counts[path] = {'hits': 0, 'total_time': 0}
+            api_counts[path]['hits'] += 1
+            api_counts[path]['total_time'] += duration
 
         average_response_time = total_time / count if count > 0 else 0
 
@@ -267,6 +247,7 @@ def logs_stats():
     except Exception as e:
         logging.error(f"Error general en logs_stats: {str(e)} - Traza: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
+
 
 
 if __name__ == '__main__':
