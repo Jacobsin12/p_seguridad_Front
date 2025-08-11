@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from datetime import datetime
@@ -7,21 +8,39 @@ from flask import Flask, jsonify, request, g, Response
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-
-# Firebase Admin SDK
 import firebase_admin
 from firebase_admin import credentials, firestore
+import tempfile
+import json
 
-# Inicializa Firebase Admin (ajusta la ruta a tu archivo JSON)
-cred = credentials.Certificate('firebase_key.json')
-firebase_admin.initialize_app(cred)
+# --- Configuraciones desde variables de entorno ---
+SECRET_KEY = os.environ.get('SECRET_KEY', 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw')
+PORT = int(os.environ.get('PORT', 5000))
+
+AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'http://localhost:5001')
+USER_SERVICE_URL = os.environ.get('USER_SERVICE_URL', 'http://localhost:5002')
+TASK_SERVICE_URL = os.environ.get('TASK_SERVICE_URL', 'http://localhost:5003')
+
+# Firebase credentials JSON desde variable de entorno
+firebase_cred_json = os.environ.get('FIREBASE_CREDENTIALS')
+
+if not firebase_admin._apps:
+    if firebase_cred_json:
+        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp:
+            temp.write(firebase_cred_json)
+            temp.flush()
+            cred = credentials.Certificate(temp.name)
+            firebase_admin.initialize_app(cred)
+    else:
+        raise Exception("No se encontró la variable de entorno FIREBASE_CREDENTIALS para Firebase")
+
 db = firestore.client()
 
-# Clave secreta para decodificar JWT (debe coincidir con el backend auth)
-SECRET_KEY = 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw'
-
+# --- Flask App ---
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:4200"])
+
+# Ajusta la URL del frontend que usarás en producción
+CORS(app, origins=["http://localhost:4200", "https://tu-frontend.onrender.com"])
 
 logging.basicConfig(
     filename='apigateway.log',
@@ -35,10 +54,6 @@ limiter = Limiter(
     key_func=get_remote_address,
     default_limits=["500 per hour"]
 )
-
-AUTH_SERVICE_URL = 'http://localhost:5001'
-USER_SERVICE_URL = 'http://localhost:5002'
-TASK_SERVICE_URL = 'http://localhost:5003'
 
 def get_user_from_token(token):
     try:
@@ -110,7 +125,6 @@ def proxy_request(service_url, path):
             timeout=10
         )
     except requests.exceptions.RequestException as e:
-        # En caso de error comunicando con microservicio, devolver error controlado
         return jsonify({"error": "Error comunicando con el microservicio", "details": str(e)}), 502
 
     excluded_headers = [
@@ -173,7 +187,6 @@ def logs_stats():
                 if status_code is None or time_sec is None or path is None:
                     continue
 
-                # Normalizar rutas para agrupar /tasks
                 if path.startswith('/tasks'):
                     path = '/tasks'
 
@@ -210,5 +223,4 @@ def logs_stats():
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
+    app.run(host="0.0.0.0", port=PORT)
