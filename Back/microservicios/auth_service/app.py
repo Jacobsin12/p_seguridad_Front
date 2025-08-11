@@ -11,7 +11,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 
-# Obtener URL de base de datos desde variable de entorno (configurada en Render)
+# Configuración base de datos desde variable de entorno
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL no está configurada")
@@ -22,7 +22,7 @@ app.config['SECRET_KEY'] = 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw'
 
 db = SQLAlchemy(app)
 
-# Modelo Usuario para la BD PostgreSQL
+# Modelo de usuario
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -32,24 +32,23 @@ class User(db.Model):
     status = db.Column(db.String(20), default='active')
     totp_secret = db.Column(db.String(16))
 
-# Crear las tablas (esto solo se ejecuta si no existen)
-@app.before_first_request
-def create_tables():
+# Crear tablas al inicio de la aplicación
+with app.app_context():
     db.create_all()
 
-# Registro
+# Registro de usuario
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
     if not data or 'username' not in data or 'password' not in data or 'email' not in data:
         return jsonify({'error': 'Faltan campos'}), 400
     
+    if User.query.filter_by(username=data['username']).first():
+        return jsonify({'error': 'Nombre de usuario ya existe'}), 409
+
     hashed_password = generate_password_hash(data['password'])
     totp_secret = pyotp.random_base32()
 
-    if User.query.filter_by(username=data['username']).first():
-        return jsonify({'error': 'Nombre de usuario ya existe'}), 409
-    
     user = User(username=data['username'], password=hashed_password,
                 email=data['email'], totp_secret=totp_secret)
     db.session.add(user)
