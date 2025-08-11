@@ -20,7 +20,7 @@ PORT = int(os.environ.get('PORT', 5000))
 
 AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'https://auth-service-ywqa.onrender.com')
 USER_SERVICE_URL = os.environ.get('USER_SERVICE_URL', 'https://user-service-ta15.onrender.com')
-TASK_SERVICE_URL = os.environ.get('TASK_SERVICE_URL', 'https://p-seguridad.onrender.com')
+TASK_SERVICE_URL = os.environ.get('TASK_SERVICE_URL', 'https://task-service-qomb.onrender.com')
 
 # Firebase credentials JSON desde variable de entorno
 firebase_cred_json = os.environ.get('FIREBASE_CREDENTIALS')
