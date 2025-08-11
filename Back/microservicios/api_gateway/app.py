@@ -17,9 +17,9 @@ import json
 SECRET_KEY = os.environ.get('SECRET_KEY', 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw')
 PORT = int(os.environ.get('PORT', 5000))
 
-AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'http://localhost:5001')
-USER_SERVICE_URL = os.environ.get('USER_SERVICE_URL', 'http://localhost:5002')
-TASK_SERVICE_URL = os.environ.get('TASK_SERVICE_URL', 'http://localhost:5003')
+AUTH_SERVICE_URL = os.environ.get('AUTH_SERVICE_URL', 'https://auth-service-ywqa.onrender.com')
+USER_SERVICE_URL = os.environ.get('USER_SERVICE_URL', 'https://user-service-ta15.onrender.com')
+TASK_SERVICE_URL = os.environ.get('TASK_SERVICE_URL', 'https://p-seguridad.onrender.com')
 
 # Firebase credentials JSON desde variable de entorno
 firebase_cred_json = os.environ.get('FIREBASE_CREDENTIALS')
@@ -40,7 +40,7 @@ db = firestore.client()
 app = Flask(__name__)
 
 # Ajusta la URL del frontend que usarás en producción
-CORS(app, origins=["http://localhost:4200", "https://tu-frontend.onrender.com"])
+CORS(app, origins=["http://localhost:4200", "https://appseg.vercel.app"])
 
 logging.basicConfig(
     filename='apigateway.log',
@@ -128,7 +128,7 @@ def proxy_request(service_url, path):
         return jsonify({"error": "Error comunicando con el microservicio", "details": str(e)}), 502
 
     excluded_headers = [
-        'content-encoding', 'content-length', 'transfer-encoding', 'connection',
+        +'content-length', 'transfer-encoding', 'connection',
         'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te',
         'trailers', 'upgrade'
     ]
