@@ -21,6 +21,8 @@ CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
 
 # Obtener la URL de la base de datos de la variable de entorno
 DATABASE_URL = os.getenv('DATABASE_URL')
+print(f"DATABASE_URL leída: {DATABASE_URL}")
+
 if not DATABASE_URL:
     logging.error("La variable de entorno DATABASE_URL no está definida")
     raise RuntimeError("La variable de entorno DATABASE_URL no está definida")
@@ -35,13 +37,14 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw')
 class Task(db.Model):
     __tablename__ = 'tasks'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String, nullable=False)
+    name = db.Column(db.Text, nullable=False)
     description = db.Column(db.Text)
-    create_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    create_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
     deadline = db.Column(db.DateTime)
-    status = db.Column(db.String, nullable=False, default='InProgress')
-    is_alive = db.Column(db.Boolean, nullable=False, default=True)
+    status = db.Column(db.Text, nullable=False, default='InProgress')
+    isAlive = db.Column(db.Boolean, nullable=False, default=True)
     created_by = db.Column(db.Integer, nullable=False)
+
 
 def token_required(f):
     @wraps(f)
@@ -67,6 +70,15 @@ def token_required(f):
 def handle_exception(e):
     logging.error(f"Error interno: {str(e)}\n{traceback.format_exc()}")
     return jsonify({"error": "Error interno del servidor"}), 500
+
+@app.route('/test-db')
+def test_db():
+    try:
+        db.session.execute('SELECT 1')
+        return jsonify({'db_status': 'ok'})
+    except Exception as e:
+        logging.error(f"Error en conexión a BD: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({'db_status': 'error', 'message': str(e)}), 500
 
 @app.route('/tasks', methods=['POST'])
 @token_required
