@@ -1,3 +1,5 @@
+
+
 import os
 import time
 import logging
@@ -12,6 +14,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import tempfile
 import json
+import traceback  # Agregado para capturar trazas de errores
 
 # --- Configuraciones desde variables de entorno ---
 SECRET_KEY = os.environ.get('SECRET_KEY', 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw')
@@ -26,12 +29,18 @@ firebase_cred_json = os.environ.get('FIREBASE_CREDENTIALS')
 
 if not firebase_admin._apps:
     if firebase_cred_json:
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp:
-            temp.write(firebase_cred_json)
-            temp.flush()
-            cred = credentials.Certificate(temp.name)
-            firebase_admin.initialize_app(cred)
+        try:
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp:
+                temp.write(firebase_cred_json)
+                temp.flush()
+                cred = credentials.Certificate(temp.name)
+                firebase_admin.initialize_app(cred)
+            logging.info("Firebase inicializado correctamente.")
+        except Exception as e:
+            logging.error(f"Error inicializando Firebase: {str(e)} - Traza: {traceback.format_exc()}")
+            raise Exception(f"No se pudo inicializar Firebase: {str(e)}")
     else:
+        logging.error("No se encontró la variable de entorno FIREBASE_CREDENTIALS para Firebase")
         raise Exception("No se encontró la variable de entorno FIREBASE_CREDENTIALS para Firebase")
 
 db = firestore.client()
@@ -44,9 +53,10 @@ CORS(app, origins=["http://localhost:4200", "https://appseg.vercel.app"])
 
 logging.basicConfig(
     filename='apigateway.log',
-    level=logging.INFO,
+    level=logging.DEBUG,  # Cambiado a DEBUG para más detalles
     format='%(asctime)s | %(levelname)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    datefmt='%Y-%m-%d %H:%M:%S',
+    filemode='a'  # Aseguramos modo append para no sobreescribir logs
 )
 
 limiter = Limiter(
@@ -59,13 +69,17 @@ def get_user_from_token(token):
     try:
         token = token.replace("Bearer ", "")
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        return payload.get("username") or payload.get("user_id") or "unknown"
-    except Exception:
+        user = payload.get("username") or payload.get("user_id") or "unknown"
+        logging.debug(f"Usuario extraído del token: {user}")
+        return user
+    except Exception as e:
+        logging.error(f"Error decodificando token: {str(e)} - Traza: {traceback.format_exc()}")
         return "invalid_token"
 
 @app.before_request
 def start_timer():
     g.start_time = time.time()
+    logging.debug(f"Iniciando solicitud: {request.method} {request.full_path}")
 
 @app.after_request
 def log_request(response):
@@ -95,8 +109,9 @@ def log_request(response):
             'duration': duration,
             'user': user
         })
+        logging.debug("Log guardado en Firestore correctamente.")
     except Exception as e:
-        print(f"Error guardando log en Firestore: {e}")
+        logging.error(f"Error guardando log en Firestore: {str(e)} - Traza: {traceback.format_exc()}")
 
     return response
 
@@ -111,10 +126,13 @@ def proxy_request(service_url, path):
     if method in ['POST', 'PUT', 'PATCH']:
         if request.is_json:
             json_data = request.get_json()
+            logging.debug(f"Datos JSON enviados: {json_data}")
         else:
             data = request.form.to_dict()
+            logging.debug(f"Datos form enviados: {data}")
 
     try:
+        logging.debug(f"Enviando solicitud a {url} con método {method}")
         resp = requests.request(
             method=method,
             url=url,
@@ -124,14 +142,17 @@ def proxy_request(service_url, path):
             json=json_data,
             timeout=10
         )
+        logging.debug(f"Respuesta recibida de {url}: Status {resp.status_code}")
     except requests.exceptions.RequestException as e:
+        logging.error(f"Error en proxy_request a {url}: {str(e)} - Traza: {traceback.format_exc()}")
         return jsonify({"error": "Error comunicando con el microservicio", "details": str(e)}), 502
 
     excluded_headers = [
-        +'content-length', 'transfer-encoding', 'connection',
+        'content-length', 'transfer-encoding', 'connection',
         'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te',
         'trailers', 'upgrade'
-    ]
+    ]  # Corregido: Quitado el '+' innecesario que causaba error de sintaxis
+
     response_headers = [(name, value) for (name, value) in resp.headers.items()
                         if name.lower() not in excluded_headers]
 
@@ -141,10 +162,12 @@ def proxy_request(service_url, path):
 @app.route('/auth/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 @limiter.limit("10/minute")
 def proxy_auth(path):
+    logging.debug(f"Proxy a auth: {path}")
     return proxy_request(AUTH_SERVICE_URL, path)
 
 @app.route('/user/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
 def proxy_user(path):
+    logging.debug(f"Proxy a user: {path}")
     return proxy_request(USER_SERVICE_URL, path)
 
 @app.route('/tasks', methods=['GET', 'POST'])
@@ -152,58 +175,72 @@ def proxy_user(path):
 @app.route('/tasks/<path:path>', methods=['GET', 'PUT', 'DELETE', 'PATCH'])
 def proxy_tasks(path=''):
     fixed_path = 'tasks' if path == '' else f'tasks/{path}'
+    logging.debug(f"Proxy a tasks: {fixed_path}")
     return proxy_request(TASK_SERVICE_URL, fixed_path)
 
 @app.route('/api/logs/stats', methods=['GET'])
 def logs_stats():
+    logging.debug("Accediendo a /api/logs/stats")
     try:
         status_counts = {}
         total_time = 0
         count = 0
         api_counts = {}
 
-        with open('apigateway.log', 'r') as f:
-            for line in f:
-                parts = line.strip().split('|')
-                if len(parts) < 5:
-                    continue
+        try:
+            with open('apigateway.log', 'r') as f:
+                logging.debug("Archivo de log abierto correctamente.")
+                for line in f:
+                    parts = line.strip().split('|')
+                    if len(parts) < 5:
+                        logging.warning(f"Línea de log inválida: {line}")
+                        continue
 
-                status_code = None
-                time_sec = None
-                path = None
+                    status_code = None
+                    time_sec = None
+                    path = None
 
-                for part in parts:
-                    part = part.strip()
-                    if part.startswith('Status:'):
-                        status_code = part.split(' ')[1]
-                    elif part.startswith('Time:'):
-                        try:
-                            time_sec = float(part.split(' ')[1].replace('s', ''))
-                        except Exception:
-                            time_sec = 0
-                    elif any(part.startswith(m) for m in ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']):
-                        path = part.split(' ')[1]
+                    for part in parts:
+                        part = part.strip()
+                        if part.startswith('Status:'):
+                            status_code = part.split(' ')[1]
+                        elif part.startswith('Time:'):
+                            try:
+                                time_sec = float(part.split(' ')[1].replace('s', ''))
+                            except Exception:
+                                logging.warning(f"Error parseando tiempo en línea: {line}")
+                                time_sec = 0
+                        elif any(part.startswith(m) for m in ['POST', 'GET', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']):
+                            path = part.split(' ')[1]
 
-                if status_code is None or time_sec is None or path is None:
-                    continue
+                    if status_code is None or time_sec is None or path is None:
+                        logging.warning(f"Línea incompleta: {line}")
+                        continue
 
-                if path.startswith('/tasks'):
-                    path = '/tasks'
+                    if path.startswith('/tasks'):
+                        path = '/tasks'
 
-                status_counts[status_code] = status_counts.get(status_code, 0) + 1
-                total_time += time_sec
-                count += 1
+                    status_counts[status_code] = status_counts.get(status_code, 0) + 1
+                    total_time += time_sec
+                    count += 1
 
-                if path not in api_counts:
-                    api_counts[path] = {'hits': 0, 'total_time': 0}
-                api_counts[path]['hits'] += 1
-                api_counts[path]['total_time'] += time_sec
+                    if path not in api_counts:
+                        api_counts[path] = {'hits': 0, 'total_time': 0}
+                    api_counts[path]['hits'] += 1
+                    api_counts[path]['total_time'] += time_sec
+
+        except FileNotFoundError:
+            logging.error("Archivo apigateway.log no encontrado.")
+            return jsonify({"error": "Archivo de log no encontrado"}), 500
+        except Exception as e:
+            logging.error(f"Error leyendo log: {str(e)} - Traza: {traceback.format_exc()}")
+            return jsonify({"error": f"Error procesando log: {str(e)}"}), 500
 
         average_response_time = total_time / count if count > 0 else 0
 
         endpoints = {}
         for path, data in api_counts.items():
-            avg_time = data['total_time'] / data['hits']
+            avg_time = data['total_time'] / data['hits'] if data['hits'] > 0 else 0
             endpoints[path] = {
                 'hits': data['hits'],
                 'avg_time': round(avg_time, 3)
@@ -217,10 +254,10 @@ def logs_stats():
         })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logging.error(f"Error general en logs_stats: {str(e)} - Traza: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=PORT)
+    logging.info(f"Iniciando servidor en puerto {PORT}")
+    app.run(host="0.0.0.0", port=PORT, debug=True)  # Agregado debug=True para más info en consola
