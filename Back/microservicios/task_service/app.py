@@ -1,31 +1,49 @@
 from flask import Flask, request, jsonify
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 import jwt
 import os
 import datetime
 from functools import wraps
-from flask_cors import CORS
 
 app = Flask(__name__)
+
+# Configuración de CORS
 CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
 
-# Obtener variables de entorno
-DATABASE_URL = os.environ.get('DATABASE_URL')
-SECRET_KEY = os.environ.get('SECRET_KEY', 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw')
+# Obtener la URL de la base de datos de la variable de entorno
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise RuntimeError("La variable de entorno DATABASE_URL no está definida")
 
-# Función para conectarse a PostgreSQL
-def get_db_connection():
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-    return conn
+# Configuración de SQLAlchemy
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL.replace("postgres://", "postgresql://")  # Asegura compatibilidad con psycopg2
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+db = SQLAlchemy(app)
+
+# Clave secreta para JWT
+SECRET_KEY = os.getenv('SECRET_KEY', 'A9d$3f8#GjLqPwzVx7!KmRtYsB2eH4Uw')
+
+# Modelo de la tabla tasks
+class Task(db.Model):
+    __tablename__ = 'tasks'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String, nullable=False)
+    description = db.Column(db.Text)
+    create_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    deadline = db.Column(db.DateTime)
+    status = db.Column(db.String, nullable=False, default='InProgress')
+    is_alive = db.Column(db.Boolean, nullable=False, default=True)  # Cambiado a snake_case para consistencia
+    created_by = db.Column(db.Integer, nullable=False)  # Relación a users.id
+
+# Decorador para validar el token JWT
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = request.headers.get('Authorization')
         if not token:
             return jsonify({'error': 'Token requerido'}), 401
-        
         try:
             token = token.replace('Bearer ', '')
             data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
@@ -34,163 +52,132 @@ def token_required(f):
             return jsonify({'error': 'Token expirado'}), 401
         except jwt.InvalidTokenError:
             return jsonify({'error': 'Token inválido'}), 401
-        
         return f(*args, **kwargs)
     return decorated
 
-def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tasks (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            create_at TIMESTAMPTZ NOT NULL,
-            deadline TIMESTAMPTZ,
-            status TEXT CHECK (status IN ('InProgress', 'Revision', 'Completed', 'Paused')) NOT NULL DEFAULT 'InProgress',
-            isAlive BOOLEAN NOT NULL DEFAULT TRUE,
-            created_by INTEGER NOT NULL
-            -- Aquí debes tener la tabla users y su relación creada previamente
-        );
-    ''')
-    conn.commit()
-    cursor.close()
-    conn.close()
-
+# Ruta para crear una tarea
 @app.route('/tasks', methods=['POST'])
 @token_required
 def create_task():
     data = request.get_json()
     required_fields = ['name', 'description', 'deadline']
-
     if not all(field in data for field in required_fields):
         return jsonify({'error': 'Faltan campos obligatorios'}), 400
 
-    created_by = request.user['id']
-    create_at = datetime.datetime.utcnow()
-    deadline = data['deadline']
-    status = 'InProgress'
-    isAlive = True
+    try:
+        deadline = datetime.datetime.fromisoformat(data['deadline'].replace('Z', '+00:00')) if data['deadline'] else None
+    except ValueError:
+        return jsonify({'error': 'Formato de deadline inválido, debe ser ISO 8601'}), 400
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO tasks (name, description, create_at, deadline, status, isAlive, created_by)
-        VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id;
-    ''', (data['name'], data['description'], create_at, deadline, status, isAlive, created_by))
-    task_id = cursor.fetchone()[0]
-    conn.commit()
-    cursor.close()
-    conn.close()
+    task = Task(
+        name=data['name'],
+        description=data['description'],
+        deadline=deadline,
+        status='InProgress',
+        is_alive=True,
+        created_by=request.user['id']
+    )
+    try:
+        db.session.add(task)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error al crear la tarea: {str(e)}'}), 500
 
-    return jsonify({'message': 'Tarea creada', 'task_id': task_id}), 201
+    return jsonify({'message': 'Tarea creada', 'task_id': task.id}), 201
 
+# Ruta para obtener todas las tareas
 @app.route('/tasks', methods=['GET'])
 @token_required
 def get_tasks():
     created_by = request.user['id']
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('''
-        SELECT id, name, description, create_at, deadline, status, isAlive 
-        FROM tasks 
-        WHERE created_by = %s AND isAlive = TRUE
-    ''', (created_by,))
-    tasks = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    tasks = Task.query.filter_by(created_by=created_by, is_alive=True).all()
+    tasks_list = []
+    for t in tasks:
+        tasks_list.append({
+            'id': t.id,
+            'name': t.name,
+            'description': t.description,
+            'create_at': t.create_at.isoformat(),
+            'deadline': t.deadline.isoformat() if t.deadline else None,
+            'status': t.status,
+            'isAlive': t.is_alive
+        })
+    return jsonify({'tasks': tasks_list})
 
-    # Convierte isAlive a bool si no está ya
-    for task in tasks:
-        task['isAlive'] = bool(task['isAlive'])
-        # formatea fechas si quieres, por ejemplo:
-        task['create_at'] = task['create_at'].isoformat()
-        if task['deadline']:
-            task['deadline'] = task['deadline'].isoformat()
-
-    return jsonify({'tasks': tasks})
-
+# Ruta para obtener una tarea específica
 @app.route('/tasks/<int:task_id>', methods=['GET'])
 @token_required
 def get_task(task_id):
     created_by = request.user['id']
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute('''
-        SELECT id, name, description, create_at, deadline, status, isAlive 
-        FROM tasks 
-        WHERE id = %s AND created_by = %s AND isAlive = TRUE
-    ''', (task_id, created_by))
-    task = cursor.fetchone()
-    cursor.close()
-    conn.close()
-
-    if not task:
-        return jsonify({'error': 'Tarea no encontrada'}), 404
-
-    task['isAlive'] = bool(task['isAlive'])
-    task['create_at'] = task['create_at'].isoformat()
-    if task['deadline']:
-        task['deadline'] = task['deadline'].isoformat()
-
+    t = Task.query.filter_by(id=task_id, created_by=created_by, is_alive=True).first()
+    if not t:
+        return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
+    task = {
+        'id': t.id,
+        'name': t.name,
+        'description': t.description,
+        'create_at': t.create_at.isoformat(),
+        'deadline': t.deadline.isoformat() if t.deadline else None,
+        'status': t.status,
+        'isAlive': t.is_alive
+    }
     return jsonify({'task': task})
 
+# Ruta para actualizar una tarea
 @app.route('/tasks/<int:task_id>', methods=['PUT'])
 @token_required
 def update_task(task_id):
     data = request.get_json()
     created_by = request.user['id']
+    task = Task.query.filter_by(id=task_id, created_by=created_by).first()
+    if not task:
+        return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
 
     allowed_fields = ['name', 'description', 'deadline', 'status', 'isAlive']
     update_fields = {field: data[field] for field in allowed_fields if field in data}
 
+    if not update_fields:
+        return jsonify({'error': 'No se proporcionaron campos para actualizar'}), 400
+
     if 'status' in update_fields and update_fields['status'] not in ['InProgress', 'Revision', 'Completed', 'Paused']:
         return jsonify({'error': 'Estado inválido'}), 400
 
-    set_clause = ', '.join(f"{field} = %s" for field in update_fields.keys())
-    values = list(update_fields.values())
-    values.extend([task_id, created_by])
+    for field in update_fields:
+        if field == 'deadline':
+            try:
+                setattr(task, field, datetime.datetime.fromisoformat(update_fields[field].replace('Z', '+00:00')) if update_fields[field] else None)
+            except ValueError:
+                return jsonify({'error': 'Formato de deadline inválido, debe ser ISO 8601'}), 400
+        else:
+            setattr(task, field, update_fields[field])
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f'''
-        UPDATE tasks SET {set_clause}
-        WHERE id = %s AND created_by = %s
-    ''', values)
-    conn.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error al actualizar la tarea: {str(e)}'}), 500
 
-    if cursor.rowcount == 0:
-        cursor.close()
-        conn.close()
-        return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
-
-    cursor.close()
-    conn.close()
     return jsonify({'message': 'Tarea actualizada'})
 
+# Ruta para eliminar una tarea (borrado lógico)
 @app.route('/tasks/<int:task_id>', methods=['DELETE'])
 @token_required
 def delete_task(task_id):
     created_by = request.user['id']
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE tasks SET isAlive = FALSE
-        WHERE id = %s AND created_by = %s
-    ''', (task_id, created_by))
-    conn.commit()
-
-    if cursor.rowcount == 0:
-        cursor.close()
-        conn.close()
+    task = Task.query.filter_by(id=task_id, created_by=created_by).first()
+    if not task:
         return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
-
-    cursor.close()
-    conn.close()
+    task.is_alive = False
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error al eliminar la tarea: {str(e)}'}), 500
     return jsonify({'message': 'Tarea eliminada (borrado lógico)'})
 
 if __name__ == '__main__':
-    init_db()
+    with app.app_context():
+        db.create_all()  # Crear tablas si no existen
     port = int(os.environ.get('PORT', 5003))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)  # Desactivar debug en producción
