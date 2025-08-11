@@ -5,8 +5,16 @@ import jwt
 import os
 import datetime
 from functools import wraps
+import logging
+import traceback
 
 app = Flask(__name__)
+
+# Configuración de logging para errores detallados
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s %(levelname)s %(message)s',
+                    filename='task-service.log',
+                    filemode='a')
 
 # Configuración de CORS
 CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
@@ -14,10 +22,11 @@ CORS(app, resources={r"/*": {"origins": "http://localhost:4200"}})
 # Obtener la URL de la base de datos de la variable de entorno
 DATABASE_URL = os.getenv('DATABASE_URL')
 if not DATABASE_URL:
+    logging.error("La variable de entorno DATABASE_URL no está definida")
     raise RuntimeError("La variable de entorno DATABASE_URL no está definida")
 
 # Configuración de SQLAlchemy
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL.replace("postgres://", "postgresql://")  # Asegura compatibilidad con psycopg2
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL.replace("postgres://", "postgresql://")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -34,8 +43,8 @@ class Task(db.Model):
     create_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     deadline = db.Column(db.DateTime)
     status = db.Column(db.String, nullable=False, default='InProgress')
-    is_alive = db.Column(db.Boolean, nullable=False, default=True)  # Cambiado a snake_case para consistencia
-    created_by = db.Column(db.Integer, nullable=False)  # Relación a users.id
+    is_alive = db.Column(db.Boolean, nullable=False, default=True)
+    created_by = db.Column(db.Integer, nullable=False)
 
 # Decorador para validar el token JWT
 def token_required(f):
@@ -55,46 +64,79 @@ def token_required(f):
         return f(*args, **kwargs)
     return decorated
 
+# Manejo global de errores para capturar excepciones no controladas
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.error(f"Error interno: {str(e)}\n{traceback.format_exc()}")
+    return jsonify({"error": "Error interno del servidor"}), 500
+
 # Ruta para crear una tarea
 @app.route('/tasks', methods=['POST'])
 @token_required
 def create_task():
-    data = request.get_json()
-    required_fields = ['name', 'description', 'deadline']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Faltan campos obligatorios'}), 400
-
     try:
-        deadline = datetime.datetime.fromisoformat(data['deadline'].replace('Z', '+00:00')) if data['deadline'] else None
-    except ValueError:
-        return jsonify({'error': 'Formato de deadline inválido, debe ser ISO 8601'}), 400
+        data = request.get_json()
+        required_fields = ['name', 'description', 'deadline']
+        if not all(field in data for field in required_fields):
+            return jsonify({'error': 'Faltan campos obligatorios'}), 400
 
-    task = Task(
-        name=data['name'],
-        description=data['description'],
-        deadline=deadline,
-        status='InProgress',
-        is_alive=True,
-        created_by=request.user['id']
-    )
-    try:
+        deadline = None
+        if data.get('deadline'):
+            try:
+                deadline = datetime.datetime.fromisoformat(data['deadline'].replace('Z', '+00:00'))
+            except ValueError:
+                return jsonify({'error': 'Formato de deadline inválido, debe ser ISO 8601'}), 400
+
+        task = Task(
+            name=data['name'],
+            description=data['description'],
+            deadline=deadline,
+            status='InProgress',
+            is_alive=True,
+            created_by=request.user['id']
+        )
         db.session.add(task)
         db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': f'Error al crear la tarea: {str(e)}'}), 500
+        return jsonify({'message': 'Tarea creada', 'task_id': task.id}), 201
 
-    return jsonify({'message': 'Tarea creada', 'task_id': task.id}), 201
+    except Exception as e:
+        logging.error(f"Error al crear tarea: {str(e)}\n{traceback.format_exc()}")
+        db.session.rollback()
+        return jsonify({'error': 'Error al crear la tarea'}), 500
 
 # Ruta para obtener todas las tareas
 @app.route('/tasks', methods=['GET'])
 @token_required
 def get_tasks():
-    created_by = request.user['id']
-    tasks = Task.query.filter_by(created_by=created_by, is_alive=True).all()
-    tasks_list = []
-    for t in tasks:
-        tasks_list.append({
+    try:
+        created_by = request.user['id']
+        tasks = Task.query.filter_by(created_by=created_by, is_alive=True).all()
+        tasks_list = []
+        for t in tasks:
+            tasks_list.append({
+                'id': t.id,
+                'name': t.name,
+                'description': t.description,
+                'create_at': t.create_at.isoformat(),
+                'deadline': t.deadline.isoformat() if t.deadline else None,
+                'status': t.status,
+                'isAlive': t.is_alive
+            })
+        return jsonify({'tasks': tasks_list})
+    except Exception as e:
+        logging.error(f"Error al obtener tareas: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({'error': 'Error al obtener las tareas'}), 500
+
+# Ruta para obtener una tarea específica
+@app.route('/tasks/<int:task_id>', methods=['GET'])
+@token_required
+def get_task(task_id):
+    try:
+        created_by = request.user['id']
+        t = Task.query.filter_by(id=task_id, created_by=created_by, is_alive=True).first()
+        if not t:
+            return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
+        task = {
             'id': t.id,
             'name': t.name,
             'description': t.description,
@@ -102,82 +144,67 @@ def get_tasks():
             'deadline': t.deadline.isoformat() if t.deadline else None,
             'status': t.status,
             'isAlive': t.is_alive
-        })
-    return jsonify({'tasks': tasks_list})
-
-# Ruta para obtener una tarea específica
-@app.route('/tasks/<int:task_id>', methods=['GET'])
-@token_required
-def get_task(task_id):
-    created_by = request.user['id']
-    t = Task.query.filter_by(id=task_id, created_by=created_by, is_alive=True).first()
-    if not t:
-        return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
-    task = {
-        'id': t.id,
-        'name': t.name,
-        'description': t.description,
-        'create_at': t.create_at.isoformat(),
-        'deadline': t.deadline.isoformat() if t.deadline else None,
-        'status': t.status,
-        'isAlive': t.is_alive
-    }
-    return jsonify({'task': task})
+        }
+        return jsonify({'task': task})
+    except Exception as e:
+        logging.error(f"Error al obtener tarea {task_id}: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({'error': 'Error al obtener la tarea'}), 500
 
 # Ruta para actualizar una tarea
 @app.route('/tasks/<int:task_id>', methods=['PUT'])
 @token_required
 def update_task(task_id):
-    data = request.get_json()
-    created_by = request.user['id']
-    task = Task.query.filter_by(id=task_id, created_by=created_by).first()
-    if not task:
-        return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
-
-    allowed_fields = ['name', 'description', 'deadline', 'status', 'isAlive']
-    update_fields = {field: data[field] for field in allowed_fields if field in data}
-
-    if not update_fields:
-        return jsonify({'error': 'No se proporcionaron campos para actualizar'}), 400
-
-    if 'status' in update_fields and update_fields['status'] not in ['InProgress', 'Revision', 'Completed', 'Paused']:
-        return jsonify({'error': 'Estado inválido'}), 400
-
-    for field in update_fields:
-        if field == 'deadline':
-            try:
-                setattr(task, field, datetime.datetime.fromisoformat(update_fields[field].replace('Z', '+00:00')) if update_fields[field] else None)
-            except ValueError:
-                return jsonify({'error': 'Formato de deadline inválido, debe ser ISO 8601'}), 400
-        else:
-            setattr(task, field, update_fields[field])
-
     try:
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': f'Error al actualizar la tarea: {str(e)}'}), 500
+        data = request.get_json()
+        created_by = request.user['id']
+        task = Task.query.filter_by(id=task_id, created_by=created_by).first()
+        if not task:
+            return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
 
-    return jsonify({'message': 'Tarea actualizada'})
+        allowed_fields = ['name', 'description', 'deadline', 'status', 'isAlive']
+        update_fields = {field: data[field] for field in allowed_fields if field in data}
+
+        if not update_fields:
+            return jsonify({'error': 'No se proporcionaron campos para actualizar'}), 400
+
+        if 'status' in update_fields and update_fields['status'] not in ['InProgress', 'Revision', 'Completed', 'Paused']:
+            return jsonify({'error': 'Estado inválido'}), 400
+
+        for field in update_fields:
+            if field == 'deadline':
+                try:
+                    setattr(task, field, datetime.datetime.fromisoformat(update_fields[field].replace('Z', '+00:00')) if update_fields[field] else None)
+                except ValueError:
+                    return jsonify({'error': 'Formato de deadline inválido, debe ser ISO 8601'}), 400
+            else:
+                setattr(task, field, update_fields[field])
+
+        db.session.commit()
+        return jsonify({'message': 'Tarea actualizada'})
+    except Exception as e:
+        logging.error(f"Error al actualizar tarea {task_id}: {str(e)}\n{traceback.format_exc()}")
+        db.session.rollback()
+        return jsonify({'error': 'Error al actualizar la tarea'}), 500
 
 # Ruta para eliminar una tarea (borrado lógico)
 @app.route('/tasks/<int:task_id>', methods=['DELETE'])
 @token_required
 def delete_task(task_id):
-    created_by = request.user['id']
-    task = Task.query.filter_by(id=task_id, created_by=created_by).first()
-    if not task:
-        return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
-    task.is_alive = False
     try:
+        created_by = request.user['id']
+        task = Task.query.filter_by(id=task_id, created_by=created_by).first()
+        if not task:
+            return jsonify({'error': 'Tarea no encontrada o no autorizada'}), 404
+        task.is_alive = False
         db.session.commit()
+        return jsonify({'message': 'Tarea eliminada (borrado lógico)'})
     except Exception as e:
+        logging.error(f"Error al eliminar tarea {task_id}: {str(e)}\n{traceback.format_exc()}")
         db.session.rollback()
-        return jsonify({'error': f'Error al eliminar la tarea: {str(e)}'}), 500
-    return jsonify({'message': 'Tarea eliminada (borrado lógico)'})
+        return jsonify({'error': 'Error al eliminar la tarea'}), 500
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()  # Crear tablas si no existen
     port = int(os.environ.get('PORT', 5003))
-    app.run(host='0.0.0.0', port=port, debug=False)  # Desactivar debug en producción
+    app.run(host='0.0.0.0', port=port, debug=False)
