@@ -14,7 +14,7 @@ interface LogsStats {
   providedIn: 'root',
 })
 export class LogsService {
-  private apiUrl = 'http://localhost:5000/api/logs/stats'; // tu endpoint Flask
+  private apiUrl = 'https://appseg.vercel.app'; // tu endpoint Flask
 
   constructor(private http: HttpClient) {}
 

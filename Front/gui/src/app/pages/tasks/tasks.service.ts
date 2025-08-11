@@ -16,7 +16,7 @@ export interface Task {
   providedIn: 'root'
 })
 export class TasksService {
-  private baseUrl = 'http://localhost:5000/tasks';  // Cambia según tu backend
+  private baseUrl = 'https://gateway-sktd.onrender.com/tasks';  // Cambia según tu backend
 
   constructor(private http: HttpClient) {}
 
