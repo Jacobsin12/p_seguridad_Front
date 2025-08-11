@@ -20,3 +20,6 @@ database.db
 
 # Otros
 .DS_Store
+
+# Ignorar archivo de claves Firebase
+Back/microservicios/api_gateway/firebase_key.json

@@ -33,7 +33,7 @@ logging.basicConfig(
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["5 per minute"]
+    default_limits=["500 per hour"]
 )
 
 AUTH_SERVICE_URL = 'http://localhost:5001'
@@ -133,7 +133,6 @@ def proxy_auth(path):
 def proxy_user(path):
     return proxy_request(USER_SERVICE_URL, path)
 
-# Corrección importante aquí para /tasks:
 @app.route('/tasks', methods=['GET', 'POST'])
 @app.route('/tasks/', methods=['GET', 'POST'])
 @app.route('/tasks/<path:path>', methods=['GET', 'PUT', 'DELETE', 'PATCH'])
@@ -173,6 +172,10 @@ def logs_stats():
 
                 if status_code is None or time_sec is None or path is None:
                     continue
+
+                # Normalizar rutas para agrupar /tasks
+                if path.startswith('/tasks'):
+                    path = '/tasks'
 
                 status_counts[status_code] = status_counts.get(status_code, 0) + 1
                 total_time += time_sec

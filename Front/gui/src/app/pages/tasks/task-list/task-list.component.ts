@@ -9,6 +9,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { DialogModule } from 'primeng/dialog';  // Import para modal
 import { Task } from '../../../core/models/task.model';
 import { TasksService } from '../tasks.service';
+import { Router } from '@angular/router';  // <-- Import Router
 
 interface KanbanTask {
   id: number;
@@ -54,7 +55,8 @@ export class TaskListComponent implements OnInit {
   constructor(
     private fb: FormBuilder,
     private tasksService: TasksService,
-    private renderer: Renderer2
+    private renderer: Renderer2,
+    private router: Router  // <-- Inyectado Router aquí
   ) {
     this.taskForm = this.fb.group({
       name: ['', Validators.required],
@@ -228,5 +230,10 @@ export class TaskListComponent implements OnInit {
         console.error('Error creando tarea:', err);
       }
     });
+  }
+
+  // NUEVO MÉTODO para navegar al dashboard
+  goToDashboard(): void {
+    this.router.navigate(['/dash-logs']);
   }
 }

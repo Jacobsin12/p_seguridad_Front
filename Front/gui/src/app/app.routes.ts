@@ -10,12 +10,18 @@ export const routes: Routes = [
       import('./pages/auth/auth.routes').then((m) => m.AUTH_ROUTES),
   },
 
-{
-  path: 'tasks',
-  loadChildren: () =>
-    import('./pages/tasks/task.routes').then((m) => m.TASK_ROUTES),
-},
+  {
+    path: 'tasks',
+    loadChildren: () =>
+      import('./pages/tasks/task.routes').then((m) => m.TASK_ROUTES),
+  },
 
+  // Agregas esta ruta para dash-logs
+  {
+    path: 'dash-logs',
+    loadChildren: () =>
+      import('./pages/dash-logs/dash-logs.routes').then(m => m.DASH_LOGS_ROUTES),
+  },
 
   // 🔴 Esta debe ir al final
   {

@@ -1,4 +1,7 @@
+<button pButton type="button" label="Ir a Dashboard" icon="pi pi-chart-line" class="p-button-primary p-mb-9" (click)="goToDashboard()"></button>
+
 <button pButton type="button" label="Crear Nueva Tarea" icon="pi pi-plus" (click)="toggleCreateForm()"></button>
+
 
 <p-dialog header="Crear Nueva Tarea" [(visible)]="showCreateForm" [modal]="true" [closable]="false" 
           [style]="{width: '450px', maxHeight: '600px', overflow: 'auto'}" 
