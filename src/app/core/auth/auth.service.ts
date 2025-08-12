@@ -12,7 +12,7 @@ import { catchError, Observable, tap } from 'rxjs';
   providedIn: 'root',
 })
 export class AuthService {
-  // URL base del backend Flask donde se expone el servicio de autenticación
+  // URL base del backend Flask donde se expone el servicio de autenticaciooon
   private apiUrl = 'https://auth-service-ywqa.onrender.com';
 
   // Constructor que inyecta el cliente HTTP de Angular
