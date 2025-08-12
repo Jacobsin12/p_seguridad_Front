@@ -1,17 +1,11 @@
 import { HttpInterceptorFn } from '@angular/common/http';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  let token: string | null = null;
+  console.log('Interceptor - URL antes:', req.url);
 
-  // Usa tempToken solo para la ruta /verify-otp
-  if (req.url.includes('/verify-otp')) {
-    token = localStorage.getItem('tempToken');
-  } else {
-    // Para todo lo demás usa el token final
-    token = localStorage.getItem('token');
-  }
+  const token = localStorage.getItem('token');
 
-  if (token) {
+  if (token && !req.url.includes('/auth/verify-otp')) {
     req = req.clone({
       setHeaders: {
         Authorization: `Bearer ${token}`
@@ -19,5 +13,6 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     });
   }
 
+  console.log('Interceptor - URL después:', req.url);
   return next(req);
 };
