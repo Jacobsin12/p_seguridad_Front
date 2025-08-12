@@ -14,7 +14,7 @@ interface LogsStats {
   providedIn: 'root',
 })
 export class LogsService {
-  private apiUrl = 'https://appseg.vercel.app'; // tu endpoint Flask
+  private apiUrl = 'https://gateway-sktd.onrender.com/api/logs/stats'; // URL correcta del endpoint
 
   constructor(private http: HttpClient) {}
 
