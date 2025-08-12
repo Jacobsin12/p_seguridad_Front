@@ -3,9 +3,9 @@ import { HttpInterceptorFn } from '@angular/common/http';
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   console.log('Interceptor - URL antes:', req.url);
 
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('token'); // Puede ser temporal o final
 
-  if (token && !req.url.includes('/auth/verify-otp')) {
+  if (token) {
     req = req.clone({
       setHeaders: {
         Authorization: `Bearer ${token}`
