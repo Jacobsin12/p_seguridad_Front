@@ -4,7 +4,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   console.log('Interceptor - URL antes:', req.url);
 
   const token = localStorage.getItem('token');
-
+//hola esto es una prueba 
   if (token && !req.url.includes('/auth/verify-otp')) {
     req = req.clone({
       setHeaders: {
