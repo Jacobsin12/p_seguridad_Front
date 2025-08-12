@@ -1,0 +1,130 @@
+/* Contenedor centrado con fondo suave */
+.register-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh; /* ya está correcto */
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #bfd9ce, #447661);
+  transition: background-color 0.3s ease;
+}
+
+
+
+/* Modo oscuro */
+.register-container.dark-mode {
+  background: #121212;
+  color: #eee;
+}
+
+/* Estilo del card */
+.register-card {
+  max-width: 28rem; /* Compatible con max-w-lg (~32rem) */
+  width: 100%;
+  padding: 1.5rem; /* Reducido para evitar acumulación */
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+  background-color: white;
+  transition: background-color 0.3s ease;
+}
+
+.register-container.dark-mode .register-card {
+  background-color: #1e1e1e;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
+}
+
+/* Título */
+.register-title {
+  text-align: center;
+  color: #1e88e5;
+  margin: 0 0 0.5rem 0;
+}
+
+.register-container.dark-mode .register-title {
+  color: #90caf9;
+}
+
+/* Subtítulo */
+.register-subtitle {
+  text-align: center;
+  color: #616161;
+  font-size: 0.95rem;
+  margin-top: 0;
+  margin-bottom: 2rem;
+}
+
+.register-container.dark-mode .register-subtitle {
+  color: #bbb;
+}
+
+/* Grupo de inputs */
+.register-input-group {
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.register-container.dark-mode .register-input-group {
+  border-bottom-color: #555;
+}
+
+/* Icono en input */
+.register-icon {
+  color: #1e88e5;
+  margin-right: 0.5rem;
+  font-size: 1.2rem;
+}
+
+.register-container.dark-mode .register-icon {
+  color: #90caf9;
+}
+
+/* Input */
+.register-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 1rem;
+  padding: 0.25rem 0;
+  background-color: transparent;
+  color: #9f9f9f;
+  transition: color 0.3s ease;
+}
+
+.register-container.dark-mode .register-input {
+  color: #eee;
+}
+
+.register-container.dark-mode .register-input::placeholder {
+  color: #bbb;
+}
+
+/* Footer con botones */
+.register-footer {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+/* Ajuste para bg-primary en modo oscuro */
+.register-container.dark-mode .bg-primary {
+  background-color: #2d3748;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .register-card {
+    max-width: 100%;
+    padding: 1rem;
+  }
+}
+
+.register-login-text {
+  color: #000; /* Negro para modo claro */
+}
+
+.dark-mode .register-login-text {
+  color: #fff; /* Blanco para modo oscuro */
+}

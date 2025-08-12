@@ -1,0 +1,34 @@
+<h3>Dashboard de Logs</h3>
+
+<p>Total de logs: {{ totalRequests }}</p>
+<p>Tiempo promedio de respuesta: {{ avgResponseTime }} segundos</p>
+
+<p style="color: red;">{{ error }}</p>
+
+<h4>Códigos de Estado HTTP</h4>
+<ul>
+  <li>200: {{ status200 }}</li>
+  <li>404: {{ status404 }}</li>
+  <li>500: {{ status500 }}</li>
+</ul>
+
+<h4>Todos los Endpoints</h4>
+<p-table [value]="endpoints" [paginator]="true" [rows]="10" [rowsPerPageOptions]="[10,25,50]" [showGridlines]="true" [responsiveLayout]="'scroll'">
+  <ng-template pTemplate="header">
+    <tr>
+      <th>Ruta</th>
+      <th>Hits</th>
+      <th>Tiempo promedio (s)</th>
+    </tr>
+  </ng-template>
+  <ng-template pTemplate="body" let-endpoint>
+    <tr>
+      <td>{{ endpoint.path }}</td>
+      <td>{{ endpoint.hits }}</td>
+      <td>{{ endpoint.avg_time }}</td>
+    </tr>
+  </ng-template>
+</p-table>
+
+<h4>Gráfica de Uso de Endpoints</h4>
+<p-chart type="polarArea" [data]="data" [options]="options" style="width: 100%; max-width: 600px;"></p-chart>

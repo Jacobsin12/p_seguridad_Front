@@ -1,0 +1,63 @@
+<button pButton type="button" label="Ir a Dashboard" icon="pi pi-chart-line" class="p-button-primary p-mb-9" (click)="goToDashboard()"></button>
+
+<button pButton type="button" label="Crear Nueva Tarea" icon="pi pi-plus" (click)="toggleCreateForm()"></button>
+
+
+<p-dialog header="Crear Nueva Tarea" [(visible)]="showCreateForm" [modal]="true" [closable]="false" 
+          [style]="{width: '450px', maxHeight: '600px', overflow: 'auto'}" 
+          (onHide)="taskForm.reset()">
+
+  <form [formGroup]="taskForm" (ngSubmit)="onSubmit()">
+    <div class="p-field">
+      <label for="name">Nombre</label>
+      <input id="name" type="text" pInputText formControlName="name" />
+      <small *ngIf="taskForm.controls['name'].invalid && taskForm.controls['name'].touched" class="p-error">
+        Nombre es obligatorio
+      </small>
+    </div>
+
+    <div class="p-field">
+      <label for="description">Descripción</label>
+      <textarea id="description" pInputTextarea formControlName="description"></textarea>
+      <small *ngIf="taskForm.controls['description'].invalid && taskForm.controls['description'].touched" class="p-error">
+        Descripción es obligatoria
+      </small>
+    </div>
+
+    <div class="p-field">
+      <label for="deadline">Fecha límite</label>
+      <p-calendar id="deadline" formControlName="deadline" [showIcon]="true" dateFormat="yy-mm-dd" appendTo="body"></p-calendar>
+      <small *ngIf="taskForm.controls['deadline'].invalid && taskForm.controls['deadline'].touched" class="p-error">
+        Fecha límite es obligatoria
+      </small>
+    </div>
+
+    <button type="submit" pButton label="Crear tarea" [disabled]="taskForm.invalid"></button>
+    <button type="button" pButton label="Cancelar" class="p-button-secondary" (click)="toggleCreateForm()"></button>
+  </form>
+
+</p-dialog>
+
+<p-splitter [style]="{ height: '100%' }" layout="horizontal" class="mb-4 p-mt-4">
+  <ng-template #panel>
+    <h2 class="titulo">Tareas por Estado</h2>
+    <div class="kanban-board p-d-flex p-jc-between p-flex-wrap">
+      <div class="kanban-column p-m-2" *ngFor="let col of kanbanBoard" pDroppable="tasks" (onDrop)="drop(col)">
+        <div class="column-header p-text-center p-p-2 p-mb-2">{{ col.header }}</div>
+        <div
+          class="task-card p-p-3 p-mb-2 p-shadow-1"
+          *ngFor="let task of col.tasks"
+          [ngClass]="getTaskColor(task.color || '')"
+          pDraggable="tasks"
+          (onDragStart)="dragStart(task, col)"
+          (onDragEnd)="dragEnd()"
+        >
+          <strong>#{{ task.id }} - {{ task.name }}</strong><br />
+          <span><strong>Creada:</strong> {{ task.create_at | date: 'yyyy-MM-dd HH:mm' }}</span><br />
+          <span><strong>Límite:</strong> {{ task.deadline | date: 'yyyy-MM-dd HH:mm' }}</span><br />
+          <span><strong>Descripción:</strong> {{ task.description }}</span>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+</p-splitter>

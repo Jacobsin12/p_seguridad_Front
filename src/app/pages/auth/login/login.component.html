@@ -1,0 +1,127 @@
+<div class="login-container" [class.dark-mode]="darkMode">
+  <div class="login-card">
+
+    <!-- Botón toggle modo oscuro -->
+    <div style="text-align: right; margin-bottom: 1rem;">
+      <button
+        pButton
+        type="button"
+        class="btn-toggle-dark"
+        (click)="toggleDarkMode()"
+        [label]="darkMode ? 'Modo Claro' : 'Modo Oscuro'"
+        [icon]="darkMode ? 'pi pi-sun' : 'pi pi-moon'">
+      </button>
+    </div>
+
+    <h2 class="login-title">Login</h2>
+    <p class="login-subtitle">
+      {{ step === 'credentials' ? 'Ingresa tus datos' : 'Autenticación MFA' }}
+    </p>
+
+    <!-- Sección de credenciales -->
+    <div *ngIf="step === 'credentials'">
+
+      <div class="login-input-group">
+        <i class="pi pi-user login-icon"></i>
+        <input
+          pInputText
+          type="text"
+          class="login-input"
+          placeholder="Username"
+          [(ngModel)]="text1"
+          (input)="clearError()"
+          [disabled]="isLoading"
+        />
+      </div>
+
+      <div class="login-input-group">
+        <i class="pi pi-lock login-icon"></i>
+        <input
+          pInputText
+          type="password"
+          class="login-input"
+          placeholder="Password"
+          [(ngModel)]="text2"
+          (input)="clearError()"
+          (keyup.enter)="onLogin()"
+          [disabled]="isLoading"
+        />
+      </div>
+
+      <div class="login-footer">
+        <button
+          pButton
+          type="button"
+          label="Cancelar"
+          severity="secondary"
+          class="login-button"
+          [disabled]="isLoading"
+        ></button>
+        <button
+          pButton
+          type="button"
+          [label]="isLoading ? 'Iniciando...' : 'Iniciar sesión'"
+          class="login-button"
+          (click)="onLogin()"
+          [disabled]="isLoading"
+          [loading]="isLoading"
+        ></button>
+      </div>
+
+    <div class="login-register-text" style="margin-top: 1rem; text-align: center;">
+  ¿No tienes cuenta? <a routerLink="/auth/register">Regístrate aquí</a>
+</div>
+
+    </div>
+
+    <!-- Sección OTP -->
+    <div *ngIf="step === 'otp'">
+      <p>Ingresa el código OTP generado en tu aplicación de autenticación:</p>
+
+      <div class="login-input-group">
+        <i class="pi pi-key login-icon"></i>
+        <input
+          pInputText
+          type="text"
+          class="login-input"
+          placeholder="123456"
+          maxlength="6"
+          [(ngModel)]="otp"
+          (input)="clearError()"
+          (keyup.enter)="onLogin()"
+          [disabled]="isLoading"
+        />
+      </div>
+
+      <div class="login-footer" style="margin-top: 1rem;">
+        <button
+          pButton
+          type="button"
+          label="Volver"
+          severity="secondary"
+          class="login-button"
+          (click)="resetToCredentials()"
+          [disabled]="isLoading"
+        ></button>
+        <button
+          pButton
+          type="button"
+          [label]="isLoading ? 'Verificando...' : 'Verificar OTP'"
+          class="login-button"
+          (click)="onLogin()"
+          [disabled]="isLoading"
+          [loading]="isLoading"
+        ></button>
+      </div>
+
+      <div style="margin-top: 1rem; font-size: 0.85rem; color: #888;">
+        <i class="pi pi-info-circle"></i> El código OTP cambia cada 30 segundos
+      </div>
+    </div>
+
+    <!-- Mensaje de error -->
+    <div *ngIf="errorMessage" style="margin-top: 1rem;">
+      <p-message severity="error" [text]="errorMessage"></p-message>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,68 @@
+<div class="register-container" [class.dark-mode]="darkMode">
+  <div class="register-card">
+ 
+
+    <!-- Título -->
+    <h2 class="register-title">Registro de Usuario</h2>
+
+    <!-- Subtítulo -->
+    <p class="register-subtitle">Completa los siguientes campos</p>
+
+    <!-- Campos del formulario -->
+    <div class="register-input-group">
+      <i class="pi pi-user register-icon"></i>
+      <input pInputText [(ngModel)]="username" placeholder="Nombre de usuario" class="register-input" />
+    </div>
+
+    <div class="register-input-group">
+      <i class="pi pi-envelope register-icon"></i>
+      <input pInputText [(ngModel)]="email" type="email" placeholder="Correo electrónico" class="register-input" />
+    </div>
+
+    <div class="register-input-group">
+      <i class="pi pi-calendar register-icon"></i>
+      <input pInputText [(ngModel)]="birthdate" type="date" class="register-input" />
+    </div>
+
+    <div class="register-input-group">
+      <i class="pi pi-lock register-icon"></i>
+      <input pInputText [(ngModel)]="password" type="password" placeholder="Contraseña" class="register-input" />
+    </div>
+
+    <div class="register-input-group">
+      <i class="pi pi-lock register-icon"></i>
+      <input pInputText [(ngModel)]="confirmPassword" type="password" placeholder="Confirmar contraseña" class="register-input" />
+    </div>
+
+    <div class="register-input-group">
+      <i class="pi pi-question-circle register-icon"></i>
+      <input pInputText [(ngModel)]="secret_question" placeholder="Pregunta secreta" class="register-input" />
+    </div>
+
+    <div class="register-input-group">
+      <i class="pi pi-key register-icon"></i>
+      <input pInputText [(ngModel)]="secret_answer" placeholder="Respuesta secreta" class="register-input" />
+    </div>
+
+    <!-- QR si aplica -->
+    <div *ngIf="showQr" class="text-center mt-4">
+      <h4 class="mb-2">Escanea este código con Google Authenticator:</h4>
+      <img [src]="qrCodeUrl" alt="Código QR" width="200" class="mb-2" />
+      <p>Después de escanearlo, puedes iniciar sesión con tu OTP.</p>
+    </div>
+
+    <!-- Error -->
+    <div *ngIf="errorMessage" class="text-center text-red-500 mt-3">
+      {{ errorMessage }}
+    </div>
+
+    <!-- Footer -->
+    <div class="register-footer">
+      <button pButton label="Registrar" (click)="onRegister()" class="register-button"></button>
+      <p class="register-login-text mt-3 text-center w-full">
+        ¿Ya tienes cuenta?
+        <a [routerLink]="['/auth/login']" class="text-primary no-underline hover:underline">Inicia sesión aquí</a>
+      </p>
+    </div>
+  </div>
+</div>
