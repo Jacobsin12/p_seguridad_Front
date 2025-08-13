@@ -5,11 +5,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   const token = localStorage.getItem('token');
 
-  // Si hay token, lo añadimos SIEMPRE a menos que esté en las rutas excluidas
-  const excludedRoutes = ['/login', '/register']; // aquí pones solo las que no requieran token
-  const shouldExclude = excludedRoutes.some(url => req.url.includes(url));
-
-  if (token && !shouldExclude) {
+  // Aquí excluimos la ruta exacta /verify-otp
+  if (token && !req.url.endsWith('/verify-otp')) {
     req = req.clone({
       setHeaders: {
         Authorization: `Bearer ${token}`
